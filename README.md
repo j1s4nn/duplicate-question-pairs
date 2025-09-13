@@ -58,6 +58,6 @@ The aim is to identify whether two questions have the same intent or meaning.
 ## 📫 Contact
 👤 **MD Jisan Hossen**  
 🎓 AI Undergraduate at Nanjing University of Information Science and Technology (NUIST)  
-📍 Nanjing, Jiangsu Province, China  
-🔗 [GitHub Profile](https://github.com/yourusername) | [LinkedIn](https://linkedin.com/in/yourusername)  
+📍 Nanjing, Jiangsu, China  
+🔗 [GitHub Profile](https://github.com/j1s4nn) | [LinkedIn](https://linkedin.com/in/yourusername)  
 
