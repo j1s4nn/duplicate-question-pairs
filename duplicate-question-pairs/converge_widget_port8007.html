@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuplicateIQ — Converge Tool</title>
+  <!--
+    ════════════════════════════════════════════
+    CONVERGE TOOL: Duplicate Question Detector
+    Port: 8007  (standalone — no backend needed)
+    This widget runs fully client-side using the
+    Anthropic Claude API for semantic analysis.
+    Embed in Converge as an iframe or direct route.
+    ════════════════════════════════════════════
+  -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #08090d;
+      --surface:  #0f1117;
+      --s2:       #161820;
+      --border:   #1e2030;
+      --border2:  #2a2d3e;
+      --accent:   #4f8cff;
+      --aglow:    rgba(79,140,255,.18);
+      --green:    #22d3a0;
+      --gglow:    rgba(34,211,160,.15);
+      --red:      #f87171;
+      --rglow:    rgba(248,113,113,.15);
+      --amber:    #fbbf24;
+      --text:     #e8eaf6;
+      --muted:    #6b7280;
+      --mono:     'IBM Plex Mono', monospace;
+      --sans:     'Syne', sans-serif;
+      --body:     'Inter', sans-serif;
+    }
+
+    html, body { height: 100%; }
+
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: var(--body);
+      display: flex; flex-direction: column;
+      min-height: 100vh; overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background: radial-gradient(ellipse 60% 50% at 20% 10%, rgba(79,140,255,.06), transparent),
+                  radial-gradient(ellipse 50% 60% at 80% 90%, rgba(167,139,250,.05), transparent);
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 28px; border-bottom: 1px solid var(--border);
+      position: relative; z-index: 2;
+    }
+    .logo { display: flex; align-items: center; gap: 10px; }
+    .logo-mark {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: linear-gradient(135deg, #4f8cff, #a78bfa);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 16px;
+    }
+    .logo-name {
+      font-family: var(--sans); font-size: 17px; font-weight: 800; letter-spacing: -.3px;
+    }
+    .logo-name span { color: var(--accent); }
+    .from-converge {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      background: var(--s2); border: 1px solid var(--border2);
+      padding: 3px 10px; border-radius: 20px;
+    }
+
+    /* ── Main Layout ── */
+    .main {
+      position: relative; z-index: 1;
+      flex: 1; display: flex; flex-direction: column;
+      padding: 32px 28px; max-width: 900px; width: 100%; margin: 0 auto;
+      gap: 20px;
+    }
+
+    /* ── Mode Toggle ── */
+    .mode-toggle {
+      display: flex; gap: 4px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 4px; width: fit-content;
+    }
+    .mode-btn {
+      font-family: var(--sans); font-size: 12px; font-weight: 700;
+      padding: 7px 18px; border-radius: 7px; border: none;
+      cursor: pointer; color: var(--muted); background: transparent;
+      transition: all .2s;
+    }
+    .mode-btn.active {
+      background: var(--s2); color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    }
+
+    /* ── Panel ── */
+    .panel { display: none; }
+    .panel.active { display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Input Area ── */
+    .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    @media (max-width: 580px) { .input-grid { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 7px; }
+    .field label {
+      font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+      color: var(--muted); text-transform: uppercase;
+    }
+    textarea, input[type=text] {
+      background: var(--surface); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 10px; padding: 13px 15px;
+      font-family: var(--body); font-size: 14px; resize: none;
+      outline: none; transition: border-color .2s, box-shadow .2s;
+      line-height: 1.5;
+    }
+    textarea { min-height: 90px; }
+    textarea:focus, input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--aglow);
+    }
+
+    /* ── Controls ── */
+    .controls {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    }
+
+    .thresh-group { display: flex; align-items: center; gap: 8px; }
+    .thresh-label { font-family: var(--mono); font-size: 10px; color: var(--muted); white-space: nowrap; }
+    input[type=range] {
+      -webkit-appearance: none; height: 3px; border-radius: 2px;
+      background: var(--border2); outline: none; width: 110px;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%;
+      background: var(--accent); cursor: pointer;
+    }
+    .thresh-val { font-family: var(--mono); font-size: 12px; color: var(--accent); min-width: 34px; }
+
+    .btn {
+      font-family: var(--sans); font-size: 13px; font-weight: 700;
+      padding: 10px 22px; border-radius: 9px; border: none;
+      cursor: pointer; transition: all .2s; display: flex; align-items: center; gap: 7px;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      box-shadow: 0 4px 16px rgba(79,140,255,.3);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 24px rgba(79,140,255,.45); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .btn-ghost {
+      background: var(--s2); color: var(--muted);
+      border: 1px solid var(--border2); font-size: 12px; padding: 10px 16px;
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    /* ── Result ── */
+    .result {
+      border-radius: 14px; padding: 24px 28px; display: none;
+      border: 1px solid; animation: up .3s cubic-bezier(.16,1,.3,1);
+    }
+    @keyframes up { from { opacity:0; transform: translateY(14px) } to { opacity:1; transform: none } }
+    .result.dup     { background: var(--gglow); border-color: rgba(34,211,160,.25); }
+    .result.no-dup  { background: var(--rglow); border-color: rgba(248,113,113,.25); }
+    .result.border  { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.25); }
+
+    .result-top { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; }
+    .r-icon { font-size: 28px; line-height: 1; }
+    .r-verdict { font-family: var(--sans); font-size: 20px; font-weight: 800; }
+    .r-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+    .bar-row { margin-bottom: 18px; }
+    .bar-meta { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 6px; }
+    .bar-bg { height: 6px; background: var(--border2); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 1.2s cubic-bezier(.16,1,.3,1); }
+
+    .chips { display: flex; gap: 10px; flex-wrap: wrap; }
+    .chip {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 14px;
+    }
+    .chip-label { font-family: var(--mono); font-size: 9px; color: var(--muted); margin-bottom: 3px; letter-spacing: .5px; }
+    .chip-val { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+
+    /* ── Batch results ── */
+    .batch-list { display: flex; flex-direction: column; gap: 8px; }
+    .b-row {
+      display: grid; grid-template-columns: 1fr 1fr 80px 72px;
+      gap: 10px; align-items: center;
+      background: var(--s2); border: 1px solid var(--border);
+      border-radius: 9px; padding: 12px 14px; font-size: 13px;
+      animation: up .2s ease;
+    }
+    .b-row.header-row { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: .5px; border: none; background: transparent; padding: 0 14px; }
+    .pill { font-family: var(--mono); font-size: 10px; font-weight: 600; padding: 3px 9px; border-radius: 20px; text-align: center; }
+    .pill.dup  { background: var(--gglow); color: var(--green); border: 1px solid rgba(34,211,160,.3); }
+    .pill.nodup { background: var(--rglow); color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Footer ── */
+    .footer {
+      position: relative; z-index: 1;
+      text-align: center; padding: 16px;
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      border-top: 1px solid var(--border);
+    }
+
+    /* ── Spinner ── */
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color:#fff; border-radius:50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Batch textarea ── */
+    .batch-textarea { min-height: 150px; width: 100%; font-family: var(--mono); font-size: 12px; }
+
+    /* ── Summary bar ── */
+    .summary {
+      font-family: var(--mono); font-size: 11px; color: var(--muted);
+      padding: 6px 0; border-bottom: 1px solid var(--border); margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="logo">
+    <div class="logo-mark">🔗</div>
+    <div class="logo-name">Duplicate<span>IQ</span></div>
+  </div>
+  <div class="from-converge">via Converge</div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Mode Toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn active" onclick="switchMode('pair', this)">Pair Compare</button>
+    <button class="mode-btn" onclick="switchMode('batch', this)">Batch</button>
+  </div>
+
+  <!-- Pair Panel -->
+  <div class="panel active" id="panel-pair">
+    <div class="input-grid">
+      <div class="field">
+        <label>Question A</label>
+        <textarea id="qa" placeholder="e.g. How do I reset my password?"></textarea>
+      </div>
+      <div class="field">
+        <label>Question B</label>
+        <textarea id="qb" placeholder="e.g. I forgot my login credentials, what should I do?"></textarea>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div class="thresh-group">
+        <span class="thresh-label">THRESHOLD</span>
+        <input type="range" id="thresh" min="0" max="1" step="0.01" value="0.85" oninput="syncThresh(this)" />
+        <span class="thresh-val" id="thresh-val">0.85</span>
+      </div>
+      <button class="btn btn-primary" id="detect-btn" onclick="detect()">
+        <span id="detect-lbl">Analyze Pair</span>
+      </button>
+      <button class="btn btn-ghost" onclick="loadEx()">Example</button>
+    </div>
+
+    <div class="result" id="result">
+      <div class="result-top">
+        <div class="r-icon" id="r-icon"></div>
+        <div>
+          <div class="r-verdict" id="r-verdict"></div>
+          <div class="r-sub" id="r-sub"></div>
+        </div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-meta">
+          <span>Cosine Similarity</span>
+          <span id="r-pct" style="color:var(--accent)"></span>
+        </div>
+        <div class="bar-bg">
+          <div class="bar-fill" id="r-bar" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="chips">
+        <div class="chip">
+          <div class="chip-label">SCORE</div>
+          <div class="chip-val" id="r-score"></div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">CONFIDENCE</div>
+          <div class="chip-val" id="r-conf"></div>
+        </div>
+        <div class="chip">
+          <div class="chip-label">MODEL</div>
+          <div class="chip-val" style="font-size:11px" id="r-model">SBERT</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Batch Panel -->
+  <div class="panel" id="panel-batch">
+    <div class="field">
+      <label>Pairs — one per line: Question A | Question B</label>
+      <textarea class="batch-textarea" id="batch-input" placeholder="How do I reset my password? | I forgot my login credentials
+How to cancel subscription? | Steps to end my plan
+What is the refund policy? | How do I get my money back?"></textarea>
+    </div>
+    <div class="controls">
+      <div class="thresh-group">
+        <span class="thresh-label">THRESHOLD</span>
+        <input type="range" id="batch-thresh" min="0" max="1" step="0.01" value="0.85" oninput="syncThresh(this,'batch-thresh-val')" />
+        <span class="thresh-val" id="batch-thresh-val">0.85</span>
+      </div>
+      <button class="btn btn-primary" id="batch-btn" onclick="runBatch()">
+        <span id="batch-lbl">Run Batch</span>
+      </button>
+    </div>
+    <div id="batch-out"></div>
+  </div>
+
+</div>
+
+<!-- Footer -->
+<div class="footer">DuplicateIQ · Converge Tool · Port 8007 · Semantic analysis via Claude API</div>
+
+<script>
+  /* ══════════════════════════════════════
+     NOTE: This widget calls the backend at localhost:8000
+     In production, replace API_BASE with your deployed URL.
+     If backend is unavailable, falls back to Claude API 
+     for semantic scoring (client-side demo mode).
+  ══════════════════════════════════════ */
+  const API_BASE = 'http://localhost:8000';
+
+  // ── Mode switch ──
+  function switchMode(name, btn) {
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  // ── Slider ──
+  function syncThresh(el, valId = 'thresh-val') {
+    document.getElementById(valId).textContent = parseFloat(el.value).toFixed(2);
+  }
+
+  // ── Example ──
+  function loadEx() {
+    document.getElementById('qa').value = 'How do I reset my password?';
+    document.getElementById('qb').value = 'I forgot my login credentials, what should I do?';
+  }
+
+  // ── Detect ──
+  async function detect() {
+    const qa = document.getElementById('qa').value.trim();
+    const qb = document.getElementById('qb').value.trim();
+    const threshold = parseFloat(document.getElementById('thresh').value);
+    if (!qa || !qb) return;
+
+    const btn = document.getElementById('detect-btn');
+    document.getElementById('detect-lbl').innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+
+    try {
+      // Try backend first
+      const res = await fetch(`${API_BASE}/api/detect`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ question_a: qa, question_b: qb, threshold })
+      });
+      const d = await res.json();
+      renderResult(d);
+    } catch {
+      // Fallback: use Claude API for semantic scoring
+      const score = await claudeFallback(qa, qb);
+      renderResult({
+        question_a: qa, question_b: qb,
+        similarity_score: score,
+        is_duplicate: score >= threshold,
+        threshold_used: threshold,
+        confidence: score > 0.9 ? 'HIGH' : score > 0.75 ? 'MEDIUM' : 'LOW'
+      });
+    } finally {
+      document.getElementById('detect-lbl').textContent = 'Analyze Pair';
+      btn.disabled = false;
+    }
+  }
+
+  // ── Claude Fallback (no backend) ──
+  async function claudeFallback(qa, qb) {
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': '' },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 50,
+          messages: [{
+            role: 'user',
+            content: `Rate the semantic similarity of these two questions on a scale of 0.00 to 1.00. Return ONLY the number.\n\nQ1: ${qa}\nQ2: ${qb}`
+          }]
+        })
+      });
+      const d = await res.json();
+      return parseFloat(d.content?.[0]?.text) || 0.5;
+    } catch {
+      // Pure heuristic fallback
+      return simpleScore(qa, qb);
+    }
+  }
+
+  function simpleScore(a, b) {
+    const words = t => new Set(t.toLowerCase().replace(/[^a-z0-9 ]/g,'').split(/\s+/).filter(Boolean));
+    const wa = words(a), wb = words(b);
+    const inter = [...wa].filter(w => wb.has(w)).length;
+    const union = new Set([...wa, ...wb]).size;
+    return union === 0 ? 0 : parseFloat((inter / union).toFixed(3));
+  }
+
+  // ── Render ──
+  function renderResult(d) {
+    const card = document.getElementById('result');
+    card.style.display = 'block';
+    const isDup = d.is_duplicate;
+    const isBorder = !isDup && d.similarity_score > d.threshold_used * 0.9;
+    card.className = 'result ' + (isDup ? 'dup' : isBorder ? 'border' : 'no-dup');
+    document.getElementById('r-icon').textContent = isDup ? '✓' : isBorder ? '⚡' : '✗';
+    document.getElementById('r-verdict').textContent = isDup ? 'Duplicate Detected' : isBorder ? 'Borderline — Review' : 'Not a Duplicate';
+    document.getElementById('r-sub').textContent = `Score: ${d.similarity_score} · Threshold: ${d.threshold_used}`;
+    const pct = Math.round(d.similarity_score * 100);
+    document.getElementById('r-pct').textContent = `${pct}%`;
+    const bar = document.getElementById('r-bar');
+    bar.style.width = '0%';
+    bar.style.background = isDup ? 'var(--green)' : isBorder ? 'var(--amber)' : 'var(--red)';
+    setTimeout(() => { bar.style.width = pct + '%'; }, 50);
+    document.getElementById('r-score').textContent = d.similarity_score.toFixed(4);
+    document.getElementById('r-conf').textContent = d.confidence;
+    document.getElementById('r-conf').style.color = d.confidence === 'HIGH' ? 'var(--green)' : d.confidence === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)';
+  }
+
+  // ── Batch ──
+  async function runBatch() {
+    const raw = document.getElementById('batch-input').value.trim();
+    if (!raw) return;
+    const lines = raw.split('\n').filter(l => l.includes('|'));
+    const threshold = parseFloat(document.getElementById('batch-thresh').value);
+    const pairs = lines.slice(0, 50).map(l => {
+      const [a, b] = l.split('|').map(s => s.trim());
+      return { question_a: a, question_b: b, threshold };
+    });
+
+    document.getElementById('batch-lbl').innerHTML = '<span class="spinner"></span>';
+    document.getElementById('batch-btn').disabled = true;
+
+    const out = document.getElementById('batch-out');
+    out.innerHTML = '';
+
+    try {
+      const res = await fetch(`${API_BASE}/api/detect/batch`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pairs })
+      });
+      const d = await res.json();
+      renderBatch(d.results, threshold);
+    } catch {
+      // Fallback: score each pair individually
+      const results = await Promise.all(pairs.map(async p => {
+        const score = await claudeFallback(p.question_a, p.question_b);
+        return { ...p, similarity_score: score, is_duplicate: score >= threshold, confidence: score > 0.9 ? 'HIGH' : 'LOW' };
+      }));
+      renderBatch(results, threshold);
+    } finally {
+      document.getElementById('batch-lbl').textContent = 'Run Batch';
+      document.getElementById('batch-btn').disabled = false;
+    }
+  }
+
+  function renderBatch(results, threshold) {
+    const out = document.getElementById('batch-out');
+    const dups = results.filter(r => r.is_duplicate).length;
+    out.innerHTML = `<div class="summary">${results.length} pairs · ${dups} duplicate${dups!==1?'s':''}</div>
+    <div class="batch-list">
+      <div class="b-row header-row"><span>QUESTION A</span><span>QUESTION B</span><span>SCORE</span><span>VERDICT</span></div>
+    </div>`;
+    const list = out.querySelector('.batch-list');
+    results.forEach(r => {
+      const row = document.createElement('div');
+      row.className = 'b-row';
+      row.innerHTML = `
+        <span class="truncate" title="${r.question_a}">${r.question_a}</span>
+        <span class="truncate" title="${r.question_b}">${r.question_b}</span>
+        <span style="font-family:var(--mono);font-size:12px;color:${r.is_duplicate?'var(--green)':'var(--muted)'}">${(r.similarity_score||0).toFixed(3)}</span>
+        <span class="pill ${r.is_duplicate?'dup':'nodup'}">${r.is_duplicate?'DUP':'UNIQUE'}</span>
+      `;
+      list.appendChild(row);
+    });
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DuplicateIQ — Semantic Question Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #08090d;
+      --surface:     #0f1117;
+      --surface2:    #161820;
+      --border:      #1e2030;
+      --border2:     #2a2d3e;
+      --accent:      #4f8cff;
+      --accent-glow: rgba(79,140,255,.18);
+      --accent2:     #a78bfa;
+      --green:       #22d3a0;
+      --green-glow:  rgba(34,211,160,.15);
+      --red:         #f87171;
+      --red-glow:    rgba(248,113,113,.15);
+      --amber:       #fbbf24;
+      --text:        #e8eaf6;
+      --muted:       #6b7280;
+      --mono:        'IBM Plex Mono', monospace;
+      --sans:        'Syne', sans-serif;
+      --body:        'Inter', sans-serif;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--body);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ─── Noise grain overlay ─── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ─── Ambient glow blobs ─── */
+    .glow-blob {
+      position: fixed; border-radius: 50%;
+      filter: blur(120px); pointer-events: none; z-index: 0;
+    }
+    .blob-1 { width: 500px; height: 500px; background: rgba(79,140,255,.07); top: -120px; left: -100px; }
+    .blob-2 { width: 400px; height: 400px; background: rgba(167,139,250,.06); bottom: -80px; right: -80px; }
+
+    /* ─── Layout ─── */
+    .shell {
+      position: relative; z-index: 1;
+      max-width: 1080px; margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ─── Header ─── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 32px 0 48px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 56px;
+    }
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-mark {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+    }
+    .logo-mark svg { width: 20px; height: 20px; }
+    .logo-text { font-family: var(--sans); font-size: 20px; font-weight: 800; letter-spacing: -.5px; }
+    .logo-text span { color: var(--accent); }
+    .badge {
+      font-family: var(--mono); font-size: 11px;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--muted); padding: 4px 10px; border-radius: 6px;
+      letter-spacing: .5px;
+    }
+
+    /* ─── Hero ─── */
+    .hero { margin-bottom: 56px; }
+    .hero h1 {
+      font-family: var(--sans); font-size: clamp(32px, 5vw, 52px);
+      font-weight: 800; line-height: 1.1; letter-spacing: -1.5px;
+      margin-bottom: 16px;
+    }
+    .hero h1 em { font-style: normal; color: var(--accent); }
+    .hero p { color: var(--muted); font-size: 17px; max-width: 540px; line-height: 1.7; }
+
+    /* ─── Tabs ─── */
+    .tab-nav {
+      display: flex; gap: 4px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 4px; width: fit-content; margin-bottom: 32px;
+    }
+    .tab-btn {
+      font-family: var(--sans); font-size: 13px; font-weight: 600;
+      padding: 8px 20px; border-radius: 9px; border: none;
+      cursor: pointer; color: var(--muted);
+      background: transparent; transition: all .2s;
+    }
+    .tab-btn.active {
+      background: var(--surface2);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ─── Card ─── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 16px; padding: 32px;
+      margin-bottom: 24px;
+    }
+    .card-title {
+      font-family: var(--sans); font-size: 13px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 1px; color: var(--muted);
+      margin-bottom: 20px;
+    }
+
+    /* ─── Inputs ─── */
+    .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 640px) { .input-grid { grid-template-columns: 1fr; } }
+
+    .field { display: flex; flex-direction: column; gap: 8px; }
+    .field label {
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      letter-spacing: .5px;
+    }
+    .field textarea, .field input[type=number] {
+      background: var(--bg); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 10px;
+      padding: 14px 16px; font-family: var(--body); font-size: 14px;
+      resize: vertical; transition: border-color .2s, box-shadow .2s;
+      outline: none;
+    }
+    .field textarea { min-height: 100px; }
+    .field textarea:focus, .field input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .controls-row { display: flex; align-items: flex-end; gap: 16px; margin-top: 20px; flex-wrap: wrap; }
+
+    .threshold-field { display: flex; flex-direction: column; gap: 8px; min-width: 180px; }
+    .threshold-field label { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .slider-wrap { display: flex; align-items: center; gap: 10px; }
+    input[type=range] {
+      -webkit-appearance: none; height: 4px; border-radius: 2px;
+      background: var(--border2); outline: none; flex: 1;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none; width: 16px; height: 16px; border-radius: 50%;
+      background: var(--accent); cursor: pointer;
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .slider-val {
+      font-family: var(--mono); font-size: 13px; color: var(--accent);
+      min-width: 36px; text-align: right;
+    }
+
+    .btn {
+      font-family: var(--sans); font-size: 14px; font-weight: 700;
+      padding: 12px 28px; border-radius: 10px; border: none;
+      cursor: pointer; transition: all .2s; display: flex; align-items: center; gap: 8px;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      box-shadow: 0 4px 20px rgba(79,140,255,.3);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(79,140,255,.45); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      background: var(--surface2); color: var(--muted);
+      border: 1px solid var(--border2);
+    }
+    .btn-ghost:hover { color: var(--text); border-color: var(--border); }
+
+    /* ─── Result Card ─── */
+    .result-card {
+      border-radius: 16px; padding: 28px 32px;
+      border: 1px solid; display: none;
+      animation: slideUp .35s cubic-bezier(.16,1,.3,1);
+    }
+    @keyframes slideUp {
+      from { opacity:0; transform: translateY(16px); }
+      to   { opacity:1; transform: translateY(0); }
+    }
+    .result-card.duplicate  { background: var(--green-glow); border-color: rgba(34,211,160,.25); }
+    .result-card.no-dup     { background: var(--red-glow);   border-color: rgba(248,113,113,.25); }
+    .result-card.borderline { background: rgba(251,191,36,.08); border-color: rgba(251,191,36,.25); }
+
+    .result-top { display: flex; align-items: center; gap: 16px; margin-bottom: 24px; }
+    .result-icon { font-size: 32px; }
+    .result-verdict { font-family: var(--sans); font-size: 22px; font-weight: 800; }
+    .result-sub { font-size: 14px; color: var(--muted); margin-top: 2px; }
+
+    .score-bar-wrap { margin-bottom: 24px; }
+    .score-label {
+      display: flex; justify-content: space-between;
+      font-family: var(--mono); font-size: 12px; color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .score-bar-bg { height: 8px; background: var(--border2); border-radius: 4px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 4px; transition: width 1s cubic-bezier(.16,1,.3,1); }
+
+    .meta-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; }
+    @media (max-width: 500px) { .meta-grid { grid-template-columns: 1fr 1fr; } }
+    .meta-item {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 16px;
+    }
+    .meta-item-label { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-bottom: 4px; letter-spacing: .5px; }
+    .meta-item-val { font-family: var(--mono); font-size: 16px; font-weight: 600; }
+
+    /* ─── Batch ─── */
+    .batch-input {
+      width: 100%; background: var(--bg); border: 1px solid var(--border2);
+      color: var(--text); border-radius: 10px; padding: 16px;
+      font-family: var(--mono); font-size: 13px; min-height: 220px;
+      resize: vertical; outline: none; transition: border-color .2s, box-shadow .2s;
+    }
+    .batch-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    .batch-results { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+    .batch-row {
+      display: grid; grid-template-columns: 1fr 1fr 100px 80px 80px;
+      gap: 10px; align-items: center;
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px 16px;
+      font-size: 13px;
+      animation: slideUp .25s ease;
+    }
+    .batch-row-header {
+      font-family: var(--mono); font-size: 10px; color: var(--muted);
+      letter-spacing: .5px; text-transform: uppercase;
+    }
+    .pill {
+      font-family: var(--mono); font-size: 11px; font-weight: 600;
+      padding: 4px 10px; border-radius: 20px; text-align: center; white-space: nowrap;
+    }
+    .pill.dup  { background: var(--green-glow); color: var(--green); border: 1px solid rgba(34,211,160,.3); }
+    .pill.nodup { background: var(--red-glow); color: var(--red); border: 1px solid rgba(248,113,113,.3); }
+
+    /* ─── Search panel ─── */
+    .search-results { margin-top: 24px; display: flex; flex-direction: column; gap: 10px; }
+    .search-match {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 10px; padding: 16px; display: flex; justify-content: space-between;
+      align-items: center; gap: 16px; animation: slideUp .25s ease;
+    }
+    .match-question { font-size: 14px; line-height: 1.5; flex: 1; }
+    .match-score { font-family: var(--mono); font-size: 14px; font-weight: 600; white-space: nowrap; }
+
+    /* ─── Index panel ─── */
+    .index-list { margin-top: 20px; display: flex; flex-direction: column; gap: 8px; }
+    .index-item {
+      background: var(--surface2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 12px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .index-item-text { font-size: 13px; color: var(--text); }
+    .index-item-id { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+    /* ─── Stats panel ─── */
+    .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    @media (max-width: 600px) { .stats-grid { grid-template-columns: 1fr 1fr; } }
+    .stat-card {
+      background: var(--surface2); border: 1px solid var(--border2);
+      border-radius: 12px; padding: 20px;
+    }
+    .stat-label { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; letter-spacing: .5px; }
+    .stat-value { font-family: var(--sans); font-size: 28px; font-weight: 800; color: var(--accent); }
+    .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+    /* ─── Spinner ─── */
+    .spinner {
+      display: inline-block; width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,.3); border-top-color: #fff;
+      border-radius: 50%; animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Toast ─── */
+    #toast {
+      position: fixed; bottom: 32px; right: 32px; z-index: 100;
+      background: var(--surface2); border: 1px solid var(--border2);
+      color: var(--text); padding: 14px 20px; border-radius: 10px;
+      font-size: 13px; display: none;
+      animation: slideUp .3s ease;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }
+
+    /* ─── Empty State ─── */
+    .empty { text-align: center; padding: 48px; color: var(--muted); }
+    .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-text { font-size: 14px; }
+
+    /* ─── API status dot ─── */
+    .api-status { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .dot.online { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .dot.offline { background: var(--red); }
+
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
+  </style>
+</head>
+<body>
+
+<div class="glow-blob blob-1"></div>
+<div class="glow-blob blob-2"></div>
+
+<div class="shell">
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+          <circle cx="8" cy="8" r="4"/><circle cx="16" cy="16" r="4"/>
+          <line x1="11.5" y1="8" x2="16" y2="12"/><line x1="8" y1="11.5" x2="12" y2="16"/>
+        </svg>
+      </div>
+      <span class="logo-text">Duplicate<span>IQ</span></span>
+    </div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <div class="api-status">
+        <div class="dot" id="api-dot"></div>
+        <span id="api-label">Connecting...</span>
+      </div>
+      <div class="badge">v1.0.0</div>
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Detect <em>semantic</em> duplicates<br/>at enterprise scale.</h1>
+    <p>Powered by Sentence-BERT embeddings + FAISS vector search. Understands meaning — not just matching words.</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tab-nav">
+    <button class="tab-btn active" onclick="switchTab('detect')">Pair Detect</button>
+    <button class="tab-btn" onclick="switchTab('batch')">Batch</button>
+    <button class="tab-btn" onclick="switchTab('search')">Semantic Search</button>
+    <button class="tab-btn" onclick="switchTab('index')">Index Manager</button>
+    <button class="tab-btn" onclick="switchTab('stats')">Stats</button>
+  </div>
+
+  <!-- ─── TAB: Detect ─── -->
+  <div id="tab-detect" class="tab-panel active">
+    <div class="card">
+      <div class="card-title">Compare Question Pair</div>
+      <div class="input-grid">
+        <div class="field">
+          <label>QUESTION A</label>
+          <textarea id="qa" placeholder="e.g. How do I reset my password?"></textarea>
+        </div>
+        <div class="field">
+          <label>QUESTION B</label>
+          <textarea id="qb" placeholder="e.g. I forgot my login credentials, what should I do?"></textarea>
+        </div>
+      </div>
+      <div class="controls-row">
+        <div class="threshold-field">
+          <label>SIMILARITY THRESHOLD</label>
+          <div class="slider-wrap">
+            <input type="range" id="threshold" min="0" max="1" step="0.01" value="0.85" oninput="updateSlider(this)" />
+            <span class="slider-val" id="threshold-val">0.85</span>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="detect-btn" onclick="runDetect()">
+          <span id="detect-label">Analyze</span>
+        </button>
+        <button class="btn btn-ghost" onclick="loadExample()">Load Example</button>
+      </div>
+    </div>
+
+    <div class="result-card" id="result-card">
+      <div class="result-top">
+        <div class="result-icon" id="result-icon"></div>
+        <div>
+          <div class="result-verdict" id="result-verdict"></div>
+          <div class="result-sub" id="result-sub"></div>
+        </div>
+      </div>
+      <div class="score-bar-wrap">
+        <div class="score-label">
+          <span>Cosine Similarity Score</span>
+          <span id="score-pct" style="color:var(--accent)"></span>
+        </div>
+        <div class="score-bar-bg">
+          <div class="score-bar-fill" id="score-bar" style="width:0%"></div>
+        </div>
+      </div>
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="meta-item-label">SIMILARITY</div>
+          <div class="meta-item-val" id="m-score"></div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-item-label">CONFIDENCE</div>
+          <div class="meta-item-val" id="m-conf"></div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-item-label">LATENCY</div>
+          <div class="meta-item-val" id="m-latency"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── TAB: Batch ─── -->
+  <div id="tab-batch" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Batch Processing — Max 50 Pairs</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">
+        One pair per line, format: <code style="color:var(--accent)">Question A | Question B</code>
+      </p>
+      <textarea class="batch-input" id="batch-input" placeholder="How do I reset my password? | I forgot my login credentials
+How to cancel subscription? | Steps to end my plan
+What is the refund policy? | How do I get my money back?"></textarea>
+      <div class="controls-row" style="margin-top:16px;">
+        <div class="threshold-field">
+          <label>THRESHOLD</label>
+          <div class="slider-wrap">
+            <input type="range" min="0" max="1" step="0.01" value="0.85" oninput="updateSlider(this,'batch-thresh-val')" />
+            <span class="slider-val" id="batch-thresh-val">0.85</span>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="batch-btn" onclick="runBatch()">
+          <span id="batch-label">Run Batch</span>
+        </button>
+      </div>
+    </div>
+    <div id="batch-results" class="batch-results"></div>
+  </div>
+
+  <!-- ─── TAB: Search ─── -->
+  <div id="tab-search" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Semantic Similarity Search</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Find questions already in the index that are semantically similar to your query.</p>
+      <div class="field">
+        <label>QUERY QUESTION</label>
+        <textarea id="search-query" style="min-height:80px" placeholder="e.g. How do I cancel my account?"></textarea>
+      </div>
+      <div class="controls-row">
+        <div class="threshold-field">
+          <label>MIN SIMILARITY</label>
+          <div class="slider-wrap">
+            <input type="range" min="0" max="1" step="0.01" value="0.6" oninput="updateSlider(this,'search-thresh-val')" />
+            <span class="slider-val" id="search-thresh-val">0.60</span>
+          </div>
+        </div>
+        <div class="field" style="min-width:100px;">
+          <label>TOP K</label>
+          <input type="number" id="top-k" value="5" min="1" max="20" style="height:44px;" />
+        </div>
+        <button class="btn btn-primary" id="search-btn" onclick="runSearch()">
+          <span id="search-label">Search</span>
+        </button>
+      </div>
+    </div>
+    <div id="search-results" class="search-results"></div>
+  </div>
+
+  <!-- ─── TAB: Index Manager ─── -->
+  <div id="tab-index" class="tab-panel">
+    <div class="card">
+      <div class="card-title">Add Questions to Index</div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">Pre-compute and store embeddings for future semantic search.</p>
+      <div class="field">
+        <label>QUESTION TEXT</label>
+        <textarea id="index-question" style="min-height:80px" placeholder="e.g. How do I upgrade my plan?"></textarea>
+      </div>
+      <div class="controls-row" style="margin-top:16px;">
+        <button class="btn btn-primary" id="index-btn" onclick="addToIndex()">
+          <span id="index-label">Add to Index</span>
+        </button>
+        <button class="btn btn-ghost" onclick="resetIndex()" style="color:var(--red)">Reset Index</button>
+      </div>
+    </div>
+    <div id="index-list" class="index-list"></div>
+  </div>
+
+  <!-- ─── TAB: Stats ─── -->
+  <div id="tab-stats" class="tab-panel">
+    <div class="card">
+      <div class="card-title">System Statistics</div>
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card"><div class="stat-label">MODEL</div><div class="stat-value" style="font-size:16px" id="stat-model">—</div></div>
+        <div class="stat-card"><div class="stat-label">QUESTIONS INDEXED</div><div class="stat-value" id="stat-indexed">—</div></div>
+        <div class="stat-card"><div class="stat-label">TOTAL COMPARISONS</div><div class="stat-value" id="stat-comparisons">—</div></div>
+        <div class="stat-card"><div class="stat-label">DUPLICATES FOUND</div><div class="stat-value" id="stat-dups">—</div></div>
+        <div class="stat-card"><div class="stat-label">CACHE SIZE</div><div class="stat-value" id="stat-cache">—</div></div>
+        <div class="stat-card"><div class="stat-label">FALLBACK MODE</div><div class="stat-value" id="stat-fallback">—</div></div>
+      </div>
+      <button class="btn btn-ghost" onclick="loadStats()" style="margin-top:20px;">Refresh Stats</button>
+    </div>
+  </div>
+
+</div><!-- /shell -->
+
+<div id="toast"></div>
+
+<script>
+  const API = 'http://localhost:8000';
+  let indexedQuestions = [];
+
+  // ─── Tab Switch ───
+  function switchTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    event.target.classList.add('active');
+    if (name === 'stats') loadStats();
+  }
+
+  // ─── Slider ───
+  function updateSlider(el, valId) {
+    const id = valId || 'threshold-val';
+    const v = parseFloat(el.value).toFixed(2);
+    document.getElementById(id).textContent = v;
+  }
+
+  // ─── Toast ───
+  function toast(msg, duration = 3000) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.style.display = 'block';
+    setTimeout(() => { t.style.display = 'none'; }, duration);
+  }
+
+  // ─── Health check ───
+  async function checkHealth() {
+    const dot = document.getElementById('api-dot');
+    const label = document.getElementById('api-label');
+    try {
+      const r = await fetch(`${API}/health`);
+      const d = await r.json();
+      dot.className = 'dot online';
+      label.textContent = d.engine_ready ? 'API Online' : 'Engine loading...';
+    } catch {
+      dot.className = 'dot offline';
+      label.textContent = 'API Offline';
+    }
+  }
+
+  // ─── Load Example ───
+  function loadExample() {
+    document.getElementById('qa').value = 'How do I reset my password?';
+    document.getElementById('qb').value = "I forgot my login credentials, what should I do?";
+  }
+
+  // ─── Detect ───
+  async function runDetect() {
+    const qa = document.getElementById('qa').value.trim();
+    const qb = document.getElementById('qb').value.trim();
+    const threshold = parseFloat(document.getElementById('threshold').value);
+    if (!qa || !qb) { toast('⚠ Both questions are required.'); return; }
+
+    const btn = document.getElementById('detect-btn');
+    document.getElementById('detect-label').innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+
+    try {
+      const r = await fetch(`${API}/api/detect`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ question_a: qa, question_b: qb, threshold })
+      });
+      const d = await r.json();
+      renderResult(d);
+    } catch (e) {
+      toast('❌ API error. Is the backend running?');
+    } finally {
+      document.getElementById('detect-label').textContent = 'Analyze';
+      btn.disabled = false;
+    }
+  }
+
+  function renderResult(d) {
+    const card = document.getElementById('result-card');
+    card.style.display = 'block';
+
+    const isDup = d.is_duplicate;
+    const isBorderline = !isDup && d.similarity_score > d.threshold_used * 0.9;
+
+    card.className = 'result-card ' + (isDup ? 'duplicate' : isBorderline ? 'borderline' : 'no-dup');
+
+    document.getElementById('result-icon').textContent = isDup ? '✓' : isBorderline ? '⚡' : '✗';
+    document.getElementById('result-verdict').textContent = isDup ? 'Duplicate Detected' : isBorderline ? 'Borderline — Review Manually' : 'Not a Duplicate';
+    document.getElementById('result-sub').textContent = `Cosine similarity: ${d.similarity_score} · Threshold: ${d.threshold_used}`;
+
+    const pct = Math.round(d.similarity_score * 100);
+    document.getElementById('score-pct').textContent = `${pct}%`;
+    const bar = document.getElementById('score-bar');
+    bar.style.width = '0%';
+    bar.style.background = isDup ? 'var(--green)' : isBorderline ? 'var(--amber)' : 'var(--red)';
+    setTimeout(() => { bar.style.width = pct + '%'; }, 50);
+
+    document.getElementById('m-score').textContent = d.similarity_score.toFixed(4);
+    document.getElementById('m-conf').textContent = d.confidence;
+    document.getElementById('m-conf').style.color = d.confidence === 'HIGH' ? 'var(--green)' : d.confidence === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)';
+    document.getElementById('m-latency').textContent = d.latency_ms ? d.latency_ms + 'ms' : '—';
+  }
+
+  // ─── Batch ───
+  async function runBatch() {
+    const raw = document.getElementById('batch-input').value.trim();
+    if (!raw) { toast('⚠ Paste some pairs first.'); return; }
+    const lines = raw.split('\n').filter(l => l.includes('|'));
+    if (!lines.length) { toast('⚠ Format: Question A | Question B'); return; }
+    const threshold = parseFloat(document.querySelector('#tab-batch input[type=range]').value);
+    const pairs = lines.slice(0, 50).map(l => {
+      const [a, b] = l.split('|').map(s => s.trim());
+      return { question_a: a, question_b: b, threshold };
+    });
+
+    document.getElementById('batch-label').innerHTML = '<span class="spinner"></span>';
+    document.getElementById('batch-btn').disabled = true;
+
+    try {
+      const r = await fetch(`${API}/api/detect/batch`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ pairs })
+      });
+      const d = await r.json();
+      renderBatch(d, pairs);
+    } catch {
+      toast('❌ API error.');
+    } finally {
+      document.getElementById('batch-label').textContent = 'Run Batch';
+      document.getElementById('batch-btn').disabled = false;
+    }
+  }
+
+  function renderBatch(data, pairs) {
+    const el = document.getElementById('batch-results');
+    const dups = data.duplicates_found;
+    el.innerHTML = `
+      <div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px;">
+        ${data.total_pairs} pairs · ${dups} duplicate${dups!==1?'s':''} found · ${data.total_latency_ms}ms total
+      </div>
+      <div class="batch-row batch-row-header">
+        <span>QUESTION A</span><span>QUESTION B</span><span>SCORE</span><span>VERDICT</span><span>CONFIDENCE</span>
+      </div>
+    `;
+    data.results.forEach((r, i) => {
+      const row = document.createElement('div');
+      row.className = 'batch-row';
+      row.innerHTML = `
+        <span class="truncate" title="${r.question_a}">${r.question_a}</span>
+        <span class="truncate" title="${r.question_b}">${r.question_b}</span>
+        <span style="font-family:var(--mono);color:${r.is_duplicate?'var(--green)':'var(--muted)'}">${r.similarity_score.toFixed(3)}</span>
+        <span class="pill ${r.is_duplicate?'dup':'nodup'}">${r.is_duplicate?'DUP':'UNIQUE'}</span>
+        <span style="font-family:var(--mono);font-size:11px;color:var(--muted)">${r.confidence}</span>
+      `;
+      el.appendChild(row);
+    });
+  }
+
+  // ─── Search ───
+  async function runSearch() {
+    const q = document.getElementById('search-query').value.trim();
+    if (!q) { toast('⚠ Enter a query question.'); return; }
+    const threshold = parseFloat(document.querySelector('#tab-search input[type=range]').value);
+    const topK = parseInt(document.getElementById('top-k').value) || 5;
+
+    document.getElementById('search-label').innerHTML = '<span class="spinner"></span>';
+    document.getElementById('search-btn').disabled = true;
+
+    try {
+      const r = await fetch(`${API}/api/search`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ question: q, top_k: topK, threshold })
+      });
+      const d = await r.json();
+      renderSearch(d);
+    } catch {
+      toast('❌ API error.');
+    } finally {
+      document.getElementById('search-label').textContent = 'Search';
+      document.getElementById('search-btn').disabled = false;
+    }
+  }
+
+  function renderSearch(data) {
+    const el = document.getElementById('search-results');
+    if (!data.matches || data.matches.length === 0) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-text">No similar questions found in the index. Try adding questions in the Index Manager tab.</div></div>`;
+      return;
+    }
+    el.innerHTML = `<div style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px;">${data.matches.length} match${data.matches.length!==1?'es':''} · ${data.total_indexed} questions indexed</div>`;
+    data.matches.forEach(m => {
+      const div = document.createElement('div');
+      div.className = 'search-match';
+      div.innerHTML = `
+        <div class="match-question">${m.question}</div>
+        <div class="match-score" style="color:var(--green)">${(m.similarity_score*100).toFixed(1)}%</div>
+      `;
+      el.appendChild(div);
+    });
+  }
+
+  // ─── Index ───
+  async function addToIndex() {
+    const q = document.getElementById('index-question').value.trim();
+    if (!q) { toast('⚠ Enter a question.'); return; }
+
+    document.getElementById('index-label').innerHTML = '<span class="spinner"></span>';
+    document.getElementById('index-btn').disabled = true;
+
+    try {
+      const r = await fetch(`${API}/api/index/question`, {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ question: q })
+      });
+      const d = await r.json();
+      indexedQuestions.push(d);
+      document.getElementById('index-question').value = '';
+      renderIndex();
+      toast('✓ Question indexed successfully.');
+    } catch {
+      toast('❌ API error.');
+    } finally {
+      document.getElementById('index-label').textContent = 'Add to Index';
+      document.getElementById('index-btn').disabled = false;
+    }
+  }
+
+  async function resetIndex() {
+    if (!confirm('Reset the entire index? This cannot be undone.')) return;
+    try {
+      await fetch(`${API}/api/index/reset`, { method: 'DELETE' });
+      indexedQuestions = [];
+      renderIndex();
+      toast('✓ Index reset.');
+    } catch {
+      toast('❌ API error.');
+    }
+  }
+
+  function renderIndex() {
+    const el = document.getElementById('index-list');
+    if (!indexedQuestions.length) {
+      el.innerHTML = `<div class="empty"><div class="empty-icon">📦</div><div class="empty-text">No questions indexed yet. Add some above.</div></div>`;
+      return;
+    }
+    el.innerHTML = '';
+    indexedQuestions.forEach(q => {
+      const div = document.createElement('div');
+      div.className = 'index-item';
+      div.innerHTML = `<span class="index-item-text">${q.question}</span><span class="index-item-id">${q.id}</span>`;
+      el.appendChild(div);
+    });
+  }
+
+  // ─── Stats ───
+  async function loadStats() {
+    try {
+      const r = await fetch(`${API}/api/stats`);
+      const d = await r.json();
+      document.getElementById('stat-model').textContent = d.model;
+      document.getElementById('stat-indexed').textContent = d.questions_indexed;
+      document.getElementById('stat-comparisons').textContent = d.total_comparisons;
+      document.getElementById('stat-dups').textContent = d.duplicates_detected;
+      document.getElementById('stat-cache').textContent = d.cache_size;
+      document.getElementById('stat-fallback').textContent = d.fallback_mode ? 'YES' : 'NO';
+    } catch {
+      toast('❌ Could not load stats.');
+    }
+  }
+
+  // ─── Init ───
+  checkHealth();
+  setInterval(checkHealth, 15000);
+  renderIndex();
+</script>
+</body>
+</html>
