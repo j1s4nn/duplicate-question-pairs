@@ -201,6 +201,14 @@ pip install gunicorn
 gunicorn backend.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
+## Dataset & Evaluation
+
+DuplicateIQ ships as a service, not a trained model, so it has no training set.
+The encoder (`all-MiniLM-L6-v2`) is used off-the-shelf. The example responses
+above report measured per-request latency (tens of milliseconds at FAQ scale);
+a formal precision/recall evaluation on a labeled benchmark such as Quora
+Question Pairs is listed under Future Improvements rather than claimed here.
+
 ## Tech Stack
 
 `Python` · `Sentence-BERT (all-MiniLM-L6-v2)` · `FAISS` · `FastAPI` · `Uvicorn` · `Pydantic` · `scikit-learn (fallback)` · `pytest`
