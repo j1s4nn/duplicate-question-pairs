@@ -1,10 +1,24 @@
-# DuplicateIQ — Enterprise Duplicate Question Detection System
+# DuplicateIQ — Semantic Duplicate Question Detection
 
-> Semantic duplicate detection powered by Sentence-BERT + FAISS. Understands *meaning*, not just matching words.
+> Detects duplicate questions by **meaning**, not by matching words — Sentence-BERT embeddings + FAISS vector search behind a FastAPI service.
+
+![Python](https://img.shields.io/badge/Python-3.10+-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?logo=fastapi&logoColor=white)
+![Sentence-BERT](https://img.shields.io/badge/SBERT-all--MiniLM--L6--v2-FFD21E?logo=huggingface&logoColor=black)
+![FAISS](https://img.shields.io/badge/FAISS-IndexFlatIP-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
 ---
 
-## 🏗 Architecture Overview
+## Overview
+
+DuplicateIQ is a self-hosted NLP service that decides whether two questions are semantically equivalent — *"How do I reset my password?"* vs *"I forgot my login credentials, what should I do?"* — and can search an index of known questions for near-duplicates of a new one. It exposes single-pair, batch, and index-management endpoints through FastAPI, with a browser frontend and an optional embeddable widget.
+
+## Motivation / Problem
+
+FAQ pages, support desks, and Q&A platforms accumulate restated questions constantly. Lexical matching (SQL `LIKE`, keyword overlap) fails on paraphrases: the words differ while the intent is identical. Manual moderation does not scale. The goal here is a low-latency semantic layer that flags duplicates at ingest time, with a **precision-first** policy — wrongly merging two distinct questions is far more damaging than missing an occasional duplicate.
+
+## Methodology
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -44,82 +58,30 @@
          ┌────────────┴─────────────┐
          ▼                          ▼
 ┌─────────────────┐      ┌─────────────────────────┐
-│  Frontend UI    │      │  Converge Widget        │
+│  Frontend UI    │      │  Embeddable Widget      │
 │  (Port 8000     │      │  converge_widget_       │
 │   /frontend)    │      │  port8007.html          │
 └─────────────────┘      └─────────────────────────┘
 ```
 
----
+Pipeline per request:
 
-## 📁 Project Structure
+1. **Normalize** — contraction expansion ("don't" → "do not") and Unicode normalization, so surface noise does not perturb embeddings.
+2. **Embed** — Sentence-BERT (`all-MiniLM-L6-v2`) maps each question to a 384-dim vector. Unlike plain BERT pairwise encoding, SBERT embeddings are computed once per question and cached, making index lookup O(1) per new question.
+3. **Search / compare** — vectors are L2-normalized and compared by inner product in a FAISS `IndexFlatIP` index, which is exact cosine similarity with sub-millisecond retrieval.
+4. **Decide** — similarity is compared against a configurable threshold (default 0.85) and returned with a confidence band and measured latency.
 
-```
-duplicate-question-pairs/
-├── 📋 README.md                          ← You are here
-├── 📋 requirements.txt                   ← Python dependencies
-├── 🐍 run.py                             ← Start the API server
-│
-├── backend/
-│   ├── __init__.py
-│   ├── main.py                           ← FastAPI routes + middleware
-│   ├── engine.py                         ← SBERT + FAISS detection engine
-│   └── models.py                         ← Pydantic data models
-│
-├── frontend/
-│   └── index.html                        ← Full-featured web UI
-│
-├── tests/
-│   ├── __init__.py
-│   └── test_api.py                       ← Pytest test suite
-│
-├── docs/
-│   ├── API_REFERENCE.md                  ← Full API documentation
-│   └── ARCHITECTURE.md                   ← Deep-dive architecture notes
-│
-└── converge_widget_port8007.html         ← Standalone Converge tool
-```
+## Model & Algorithm
 
----
+| Component | Choice | Rationale |
+|---|---|---|
+| Encoder | `all-MiniLM-L6-v2` (SBERT) | Best speed/accuracy balance for short-question embeddings; 384-dim keeps the index small |
+| Similarity | Cosine (normalized inner product) | Directional similarity, unaffected by embedding magnitude — the right geometry for semantic matching |
+| Index | FAISS `IndexFlatIP` | Exact search at FAQ scale; swappable to IVF/HNSW for millions of vectors |
+| Policy | Precision-first threshold | False positives (merging distinct questions) destroy user trust; missed duplicates are recoverable |
+| Fallback | TF-IDF + cosine (scikit-learn) | Keeps the identical API contract in environments without torch/FAISS (CI, lightweight deploys) |
 
-## 🚀 Quick Start
-
-### 1. Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Start the API
-
-```bash
-python run.py
-# API running at http://localhost:8000
-# Docs at http://localhost:8000/api/docs
-```
-
-### 3. Open the frontend
-
-Open `frontend/index.html` in your browser (or serve it):
-
-```bash
-cd frontend && python -m http.server 3000
-# Visit http://localhost:3000
-```
-
-### 4. Add Converge widget
-# this section for my website. though the website do not publish yet. but the website name is Converge.
-
-Serve `converge_widget_port8007.html` on port 8007: 
-
-```bash
-python -m http.server 8007
-# Then embed in Converge as an iframe or route
-```
-
----
-
-## 🔌 API Reference
+## API Reference
 
 ### `POST /api/detect`
 Compare a single question pair.
@@ -176,17 +138,46 @@ Add a question to the vector index.
 
 Full interactive docs: `http://localhost:8000/api/docs`
 
----
+## Quick Start
 
-## 🧪 Running Tests
+### 1. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Start the API
+
+```bash
+python run.py
+# API running at http://localhost:8000
+# Docs at http://localhost:8000/api/docs
+```
+
+### 3. Open the frontend
+
+Open `frontend/index.html` in your browser (or serve it):
+
+```bash
+cd frontend && python -m http.server 3000
+# Visit http://localhost:3000
+```
+
+### 4. Optional: embeddable widget
+
+`converge_widget_port8007.html` is a standalone widget built for **Converge**, a companion media-tools web project (in development, not yet published). It can be served independently and embedded in any page as an iframe:
+
+```bash
+python -m http.server 8007
+```
+
+## Running Tests
 
 ```bash
 pytest tests/ -v
 ```
 
----
-
-## ⚙️ Configuration
+## Configuration
 
 | Parameter | Default | Description |
 |---|---|---|
@@ -195,34 +186,14 @@ pytest tests/ -v
 | Max batch | `50` | Pairs per batch request |
 | Target latency | `<100ms` | Per-request inference target |
 
-**Better accuracy** (slower): Use `all-mpnet-base-v2` in `engine.py`  
-**Faster** (less accurate): Use `all-MiniLM-L12-v2`
+**Better accuracy** (slower): use `all-mpnet-base-v2` in `engine.py`
+**Faster** (less accurate): use `all-MiniLM-L12-v2`
 
----
-
-## 📊 Key Design Decisions
-
-**Why cosine similarity?**  
-Captures directional similarity between embeddings — unaffected by embedding magnitude. Ideal for semantic matching.
-
-**Why precision over recall?**  
-False positives (merging unrelated questions) destroy user trust. We accept missing some duplicates to avoid wrongly merging distinct content.
-
-**Why FAISS?**  
-SQL `LIKE` queries can't do semantic search. FAISS enables sub-millisecond approximate nearest-neighbor search across millions of embeddings.
-
-**Why Sentence-BERT?**  
-Unlike plain BERT (which needs pairwise comparison), SBERT produces fixed-size sentence embeddings we can pre-compute and cache — enabling O(1) lookup per new question.
-
----
-
-## 🛡 Fallback Mode
+## Fallback Mode
 
 If `sentence-transformers` / FAISS are unavailable (e.g., CI/CD, lightweight environments), the engine automatically falls back to **TF-IDF + cosine similarity** (scikit-learn). All API contracts remain identical.
 
----
-
-## 📦 Deployment
+## Deployment
 
 ```bash
 # Production with Gunicorn
@@ -230,16 +201,40 @@ pip install gunicorn
 gunicorn backend.main:app -w 4 -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
 ```
 
+## Tech Stack
+
+`Python` · `Sentence-BERT (all-MiniLM-L6-v2)` · `FAISS` · `FastAPI` · `Uvicorn` · `Pydantic` · `scikit-learn (fallback)` · `pytest`
+
+## Future Improvements
+
+- Evaluate on a labeled duplicate-question benchmark (e.g., Quora Question Pairs) and report precision/recall at operating thresholds instead of design targets
+- Cross-encoder re-ranking (e.g., `cross-encoder/stsb-distilroberta-base`) for borderline pairs above a first-stage cutoff
+- Approximate indices (IVF-PQ / HNSW) and embedding caching for million-scale question corpora
+- Multilingual encoder (`paraphrase-multilingual-MiniLM`) for non-English support
+- Persistence layer for the index (currently in-memory) and Docker packaging
+
+## Project Structure
+
+```
+duplicate-question-pairs/
+├── README.md
+├── requirements.txt
+├── run.py                            ← Start the API server
+├── backend/
+│   ├── main.py                       ← FastAPI routes + middleware
+│   ├── engine.py                     ← SBERT + FAISS detection engine
+│   └── models.py                     ← Pydantic data models
+├── frontend/
+│   └── index.html                    ← Web UI
+├── tests/
+│   └── test_api.py                   ← Pytest suite
+├── docs/
+│   ├── API_REFERENCE.md
+│   └── ARCHITECTURE.md
+└── converge_widget_port8007.html     ← Standalone embeddable widget
+```
+
 ---
 
-## 👤 Author
-
-Developed by **Jisan** — *Full-Stack AI Developer*
-
-
-> **Project Mission:** Built as an enterprise-grade NLP tool demonstrating:
-> * 🧠 **Architecture:** Siamese neural networks
-> * ⚡ **Search:** Semantic vector indexing at scale
-> * ⚙️ **Backend:** Clean FastAPI design with async I/O
-> * 🛡️ **Reliability:** Production-ready test coverage
-> * 🎯 **Data Science:** Precision-first ML evaluation strategy
+**Author:** [Md Jisan Hossen](https://github.com/j1s4nn) — B.Sc. Artificial Intelligence, NUIST
+**License:** MIT
